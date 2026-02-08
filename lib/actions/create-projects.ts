@@ -1,0 +1,61 @@
+"use server"
+
+import { getServerSession } from "next-auth"
+import authOptions from "../auth-options"
+import { prisma } from "@/lib/prisma"
+import { PLAN_LIMITS } from "@/lib/plans"
+
+export async function createProject(formData: FormData){
+    const name = formData.get("name") as string;
+
+    if(!name){
+        throw new Error("Project name required");
+    }
+
+    const session = await getServerSession(authOptions);
+
+    if(!session?.user?.email){
+        throw new Error("Unauthroized");
+    }
+
+    const user = await prisma.user.findUnique({
+        where: {email: session.user.email},
+        include: {
+            orgMemberships: {
+                include: {
+                    organization:{
+                        include: {projects: true},
+                    },
+                },
+            },
+        },
+    });
+
+    if(!user || user.orgMemberships.length==0){
+        throw new Error("No organization");
+    }
+
+    const activeOrg = user.orgMemberships[0].organization;
+    const limit = PLAN_LIMITS[activeOrg.plan].projects;
+
+    if(activeOrg.projects.length >= limit){
+        throw new Error("Project limit reached");
+    }
+
+    await prisma.$transaction(async (tx)=>{
+        const project = await tx.project.create({
+            data: {
+                name,
+                organizationId: activeOrg.id,
+            },
+        });
+
+        await tx.projectMembership.create({
+            data: {
+                userId: user.id,
+                projectId: project.id,
+                role: "PROJECT_ADMIN",
+            },
+        });
+    });
+}
