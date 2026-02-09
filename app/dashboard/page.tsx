@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma"
 import authOptions from "@/lib/auth-options"
 import { PLAN_LIMITS } from "@/lib/plans";
 import { createProject } from "@/lib/actions/create-projects";
+import { listProjects } from "@/lib/actions/list-projects";
 
 export default async function DashboardPage(){
     const session = await getServerSession(authOptions);
@@ -28,6 +29,9 @@ export default async function DashboardPage(){
     }
 
     const activeOrg = user.orgMemberships[0].organization;
+
+    const projects = await listProjects();
+
     return <div>
         <h1>Dashboard</h1>
         <p>
@@ -47,5 +51,14 @@ export default async function DashboardPage(){
             <button type="submit">Create Project</button>
         </form>
 
+        <h2>Projects</h2>
+        {projects.length==0 && <p>No projects yet.</p> }
+        <ul>
+            {projects.map((project)=>(
+                <li key={project.id} >
+                    {project.name}
+                </li>
+            ))}
+        </ul>
     </div>
 }
