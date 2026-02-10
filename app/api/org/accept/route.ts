@@ -42,8 +42,7 @@ export async function POST(req: Request){
             where: {id: invite.id},
             data: {status:"ACCEPTED"},
         });
-
-        return NextResponse.json({success: true});
+        
     })
 
     return NextResponse.json({ success: true });
