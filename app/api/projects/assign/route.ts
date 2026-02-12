@@ -1,0 +1,91 @@
+import { getServerSession } from "next-auth";
+import authOptions from "@/lib/auth-options";
+import { NextResponse } from "next/server";
+import { prisma } from "@/lib/prisma";
+
+export async function POST(req: Request){
+    const session = await getServerSession(authOptions);
+
+    if(!session?.user?.email){
+        return NextResponse.json({error:"Unauthorized"},{status:401});
+    }
+
+    const { projectId, userId,role } = await req.json();
+
+    if(!projectId || !userId || !role){
+        return NextResponse.json({error:"projectId, userId and role reuired"},{status:400});
+    }
+
+    if(!["PROJECT_ADMIN", "PROJECT_MEMBER"].includes(role)){
+        return NextResponse.json(
+            {error:"Invalid project role"},
+            {status: 400}
+        );
+    }
+
+    const actor = await prisma.user.findUnique({
+        where:{email: session.user.email},
+        include:{
+            orgMemberships: true,
+        },
+    });
+
+    if(!actor || actor.orgMemberships.length == 0){
+        return NextResponse.json({error:"No organization"},{status:400});
+    }
+
+    const orgMemberships = actor.orgMemberships[0];
+
+    if(orgMemberships.role == "MEMBER"){
+        return NextResponse.json({error:"Forbidden"},{status:403});
+    }
+
+    const project = await prisma.project.findUnique({
+        where:{id: projectId},
+    });
+
+    if(!project || project.organizationId !== orgMemberships.organizationId){
+        return NextResponse.json({error:"Invalid project"},{status:400});
+    }
+
+    const targetMembership = await prisma.orgMembership.findUnique({
+        where:{
+            userId_organizationId: {
+                userId,
+                organizationId: orgMemberships.organizationId,
+            },
+        },
+    });
+    if(!targetMembership){
+        return NextResponse.json(
+            {error: "User not in this organization"},
+            {status: 400}
+        );
+    }
+
+    const existing = await prisma.projectMembership.findUnique({
+        where: {
+            userId_projectId:{
+                userId,
+                projectId,
+            },
+        },
+    });
+
+    if(existing){
+        return NextResponse.json(
+            {error: "User already assigned to project"},
+            {status: 400}
+        );
+    }
+
+    await prisma.projectMembership.create({
+        data:{
+            userId,
+            projectId,
+            role,
+        },
+    });
+
+    return NextResponse.json({success: true});
+}
